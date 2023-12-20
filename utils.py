@@ -10,9 +10,7 @@ def GenerateEquivalentClassesImpl(table: Dict[Tuple[int, int], List[str]], sum: 
     return table[(sum, width)]
   result = []
   half_width = width // 2
-  for i in range(0, sum // 2 + 1):
-    if i > sum - i:
-      break
+  for i in range(0, sum // 2+1):
     if (sum - i) > half_width:
       continue
     if i > half_width:
@@ -21,9 +19,9 @@ def GenerateEquivalentClassesImpl(table: Dict[Tuple[int, int], List[str]], sum: 
       left_list = GenerateEquivalentClassesImpl(table, i, half_width)
       for j in range(len(left_list)):
         for k in range(j+1):
-          result.append(left_list[j] + left_list[k])
+          result.append(left_list[k] + left_list[j])
     else:
-      left_list = GenerateEquivalentClassesImpl(table, sum - i, half_width)
+      left_list = GenerateEquivalentClassesImpl(table, sum-i, half_width)
       right_list = GenerateEquivalentClassesImpl(table, i, half_width)
       for left_entry in left_list:
         for right_entry in right_list:
