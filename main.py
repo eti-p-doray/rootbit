@@ -4,6 +4,7 @@ import math
 from typing import List, Dict, Tuple
 import scipy
 import numpy as np
+import random
 
 import numerical
 import utils
@@ -26,33 +27,41 @@ def LPOptimalCoupling(probabilities_a, probabilities_b):
   coupling_structure = []
   hamming_table = {}
 
+  keys_0 = [key for key in probabilities_a.keys()]
+  #random.shuffle(keys_0)
+  keys_1 = [key for key in probabilities_b.keys()]
+  #random.shuffle(keys_1)
+
   obj_c = np.zeros(len(probabilities_a) * len(probabilities_b))
   A_eq = np.zeros((len(probabilities_a) + len(probabilities_b), len(probabilities_a) * len(probabilities_b)))
   b_eq = np.zeros(len(probabilities_a) + len(probabilities_b))
 
-  for i, key_0 in enumerate(probabilities_a):
-    for j, key_1 in enumerate(probabilities_b):
+  for i, key_0 in enumerate(keys_0):
+    for j, key_1 in enumerate(keys_1):
       d = hamming_distance(hamming_table, key_0, key_1)
-      obj_c[i * len(probabilities_b) + j] = d ** 1.0001
+      obj_c[i * len(probabilities_b) + j] = d + 1.0 if d > 0 else 0
       A_eq[i, i * len(probabilities_b) + j] = 1
       A_eq[j + len(probabilities_a), i * len(probabilities_b) + j] = 1
-  for i, key_0 in enumerate(probabilities_a):
+  for i, key_0 in enumerate(keys_0):
     b_eq[i] = np.exp(probabilities_a[key_0])
-  for i, key_1 in enumerate(probabilities_b):
+  for i, key_1 in enumerate(keys_1):
     b_eq[i + len(probabilities_a)] = np.exp(probabilities_b[key_1])
 
   solution = scipy.optimize.linprog(obj_c, A_eq=A_eq, b_eq=b_eq, bounds=(0, None))
   sol_x, coupling = solution.x, solution.fun
 
   sum_overlap = 0
+  avg_coupling = 0
   sum_coupling = 0
-  for i, key_0 in enumerate(probabilities_a):
-    for j, key_1 in enumerate(probabilities_b):
+  for i, key_0 in enumerate(keys_0):
+    for j, key_1 in enumerate(keys_1):
       overlap = sol_x[i * len(probabilities_b) + j]
       if overlap == 0:
         continue
       d = hamming_distance(hamming_table, key_0, key_1)
-      sum_coupling += overlap * hamming_distance(hamming_table, key_0, key_1)
+      avg_coupling += overlap * d
+      if d > 0:
+        sum_coupling += overlap
       coupling_structure.append({
         'a': key_0,
         'b': key_1,
@@ -62,7 +71,7 @@ def LPOptimalCoupling(probabilities_a, probabilities_b):
       })
       sum_overlap += overlap
 
-  return sum_coupling, coupling_structure
+  return sum_coupling, avg_coupling, coupling_structure
 
 def NaiveCoupling(probabilities_a, probabilities_b):
   keys_0 = [key for key in probabilities_a.keys()]
@@ -129,8 +138,8 @@ from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 import pandas as pd
 
-def plotCoupling(coupling_structure, group_names, title, coupling):
-  fig = make_subplots(rows=3, cols=1, subplot_titles=(group_names['a'], group_names['b'], f'Weight: {coupling}')) 
+def plotCoupling(coupling_structure, group_names, title, avg_coupling, sum_coupling):
+  fig = make_subplots(rows=3, cols=1, subplot_titles=(group_names['a'], group_names['b'], f'Weight: {avg_coupling} - {sum_coupling}')) 
   fig.update_xaxes(range=[0, 1.0])
 
   x = [coupling['start']+coupling['overlap']/2 for coupling in coupling_structure]
@@ -179,9 +188,9 @@ for depth in range(1,5):
   probabilities_0 = numerical.ComputeProbability(probabilities_0, memoized_conditional, width, values)
   probabilities_1 = numerical.ComputeProbability(probabilities_1, memoized_conditional, width, values)
 
-  coupling_sum, coupling_structure = LPOptimalCoupling(probabilities_0, probabilities_1)
-  print(f'1-{width}: ', coupling_sum)
-  plotCoupling(coupling_structure, {'a': 'Root 0', 'b': 'Root 1'}, f'Coupling-1-{width}', coupling_sum)
+  avg_coupling, sum_coupling, coupling_structure = LPOptimalCoupling(probabilities_0, probabilities_1)
+  print(f'1-{width}: ', avg_coupling)
+  plotCoupling(coupling_structure, {'a': 'Root 0', 'b': 'Root 1'}, f'Coupling-1-{width}', avg_coupling, sum_coupling)
 
 for bits in range(1,5):
   width = 2 ** math.ceil(math.log(bits, 2))
@@ -191,6 +200,6 @@ for bits in range(1,5):
   probabilities_0 = numerical.ComputeProbability({group_a: math.log(1.0)}, memoized_conditional, 2*width, values)
   probabilities_1 = numerical.ComputeProbability({group_b: math.log(1.0)}, memoized_conditional, 2*width, values)
 
-  coupling_sum, coupling_structure = LPOptimalCoupling(probabilities_0, probabilities_1)
-  print(f'Coupling {bits}-{2*bits}: ', coupling_sum)
-  plotCoupling(coupling_structure, {'a': f'Parent {group_a}', 'b': f'Parent {group_b}'}, f'Coupling-{bits}-{2*bits}', coupling_sum)
+  avg_coupling, sum_coupling, coupling_structure = LPOptimalCoupling(probabilities_0, probabilities_1)
+  print(f'Coupling {bits}-{2*bits}: ', avg_coupling)
+  plotCoupling(coupling_structure, {'a': f'Parent {group_a}', 'b': f'Parent {group_b}'}, f'Coupling-{bits}-{2*bits}', avg_coupling, sum_coupling)
