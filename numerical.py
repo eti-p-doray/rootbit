@@ -15,7 +15,7 @@ def logsub(lhs: float, rhs: float) -> float:
   c = min(lhs, rhs)
   return c + math.log(math.exp(lhs - c) - math.exp(rhs - c))
 
-def ComputeConditionalProbability(memoized_conditional: Dict[Tuple[str, str], float], width: int, repr: str, parent_repr: str, values: List[float]) -> float:
+def ComputeConditionalProbability(memoized_conditional: Dict[Tuple[str, str], float], width: int, symmetry_width: int, repr: str, parent_repr: str, values: List[float]) -> float:
   if (width == 2):
     # 1-p, p, q, 1-q
     if parent_repr == '0':
@@ -42,22 +42,22 @@ def ComputeConditionalProbability(memoized_conditional: Dict[Tuple[str, str], fl
   left_repr = repr[0:half_width]
   right_repr = repr[half_width:]
 
-  probability_left = ComputeConditionalProbability(memoized_conditional, half_width, left_repr, left_parent, values)
-  probability_right = ComputeConditionalProbability(memoized_conditional, half_width, right_repr, right_parent, values)
+  probability_left = ComputeConditionalProbability(memoized_conditional, half_width, symmetry_width, left_repr, left_parent, values)
+  probability_right = ComputeConditionalProbability(memoized_conditional, half_width, symmetry_width, right_repr, right_parent, values)
   probability = logmul(probability_left, probability_right)
 
-  if (left_parent != right_parent):
-    cross_probability_left = ComputeConditionalProbability(memoized_conditional, half_width, left_repr, right_parent, values)
-    cross_probability_right = ComputeConditionalProbability(memoized_conditional, half_width, right_repr, left_parent, values)
+  if (left_parent != right_parent and width <= symmetry_width):
+    cross_probability_left = ComputeConditionalProbability(memoized_conditional, half_width, symmetry_width, left_repr, right_parent, values)
+    cross_probability_right = ComputeConditionalProbability(memoized_conditional, half_width, symmetry_width, right_repr, left_parent, values)
     cross_probability = logmul(cross_probability_left, cross_probability_right)
-    probability = logmul(logadd(probability, cross_probability), math.log(0.5))
+    probability = logadd(probability, cross_probability)
+    probability = logmul(probability, math.log(0.5))
 
   memoized_conditional[(repr, parent_repr)] = probability
   return probability
 
-def ComputeProbability(parent_probabilities: Dict[str, float], memoized_conditional: Dict[Tuple[str, str], float], width: int, values: List[float]) -> Dict[str, float]:
-  half_width = width // 2
-  classes = utils.GenerateEquivalentClasses(width)
+def ComputeProbability(parent_probabilities: Dict[str, float], memoized_conditional: Dict[Tuple[str, str], float], width: int, symmetry_width: int, values: List[float]) -> Dict[str, float]:
+  classes = utils.GenerateEquivalentClasses(width, symmetry_width)
 
   result = {}
   for repr in classes:
@@ -65,11 +65,11 @@ def ComputeProbability(parent_probabilities: Dict[str, float], memoized_conditio
     for parent_repr, parent_probability in parent_probabilities.items():
       if parent_probability is None:
         continue
-      conditional = ComputeConditionalProbability(memoized_conditional, width, repr, parent_repr, values)
+      conditional = ComputeConditionalProbability(memoized_conditional, width, symmetry_width, repr, parent_repr, values)
       probability = logmul(parent_probability, conditional)
       total_probability = logadd(total_probability, probability) if total_probability is not None else probability
 
-    coefficient = utils.GetEquivalentClassSize(repr, width)
+    coefficient = utils.GetEquivalentClassSize(repr, width, symmetry_width)
     total_probability = logmul(total_probability, math.log(coefficient))
     result[repr] = total_probability
   return result

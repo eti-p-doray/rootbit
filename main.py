@@ -5,32 +5,63 @@ from typing import List, Dict, Tuple
 import scipy
 import numpy as np
 import random
+from copy import deepcopy
 
 import numerical
 import utils
 
-def hamming_distance(table: Dict[Tuple[str, str], int], lhs, rhs):
+def hamming_distance(table: Dict[Tuple[str, str], int], lhs, rhs, symmetry_width):
   if (lhs, rhs) in table:
     return table[(lhs, rhs)]
   width = len(lhs)
   if width == 1:
     return int(lhs != rhs)
   half_width = width // 2
-  d1 = hamming_distance(table, lhs[0:half_width], rhs[0:half_width]) + hamming_distance(table, lhs[half_width:], rhs[half_width:])
-  d2 = hamming_distance(table, lhs[0:half_width], rhs[half_width:]) + hamming_distance(table, lhs[half_width:], rhs[0:half_width])
+  d1 = hamming_distance(table, lhs[0:half_width], rhs[0:half_width], symmetry_width) + hamming_distance(table, lhs[half_width:], rhs[half_width:], symmetry_width)
+  if width > symmetry_width:
+    return d1
+  d2 = hamming_distance(table, lhs[0:half_width], rhs[half_width:], symmetry_width) + hamming_distance(table, lhs[half_width:], rhs[0:half_width], symmetry_width)
   d = min(d1, d2)
   table[(lhs, rhs)] = d
   return d
 
+def GreedyMaxCoupling(probabilities_a, probabilities_b):
+  #probabilities_a = deepcopy(probabilities_a)
+  #probabilities_b = deepcopy(probabilities_b)
+  keys_0 = [key for key in probabilities_a.keys()]
+  keys_1 = [key for key in probabilities_b.keys()]
+  hamming_table = {}
 
-def LPOptimalCoupling(probabilities_a, probabilities_b):
+  coupling_structure = []
+
+  sum_overlap = None
+  overlap = None
+  for key in keys_0:
+    if probabilities_a[key] is None or probabilities_b[key] is None:
+      continue
+    prob_a = probabilities_a[key]
+    prob_b = probabilities_b[key]
+    overlap = min(prob_a, prob_b)
+    start = math.exp(sum_overlap) if sum_overlap is not None else 0.0
+    sum_overlap = numerical.logadd(sum_overlap, overlap) if sum_overlap is not None else overlap
+    #probabilities_a[key] = numerical.logsub(prob_a, overlap) if prob_a > overlap else None
+    #probabilities_b[key] = numerical.logsub(prob_b, overlap) if prob_b > overlap else None
+    coupling_structure.append({
+      'a': key,
+      'b': key,
+      'overlap': math.exp(overlap),
+      'weight': 0,
+      'start': start
+    })
+
+  return math.exp(sum_overlap), coupling_structure
+
+def LPOptimalCoupling(probabilities_a, probabilities_b, symmetry_width):
   coupling_structure = []
   hamming_table = {}
 
   keys_0 = [key for key in probabilities_a.keys()]
-  #random.shuffle(keys_0)
   keys_1 = [key for key in probabilities_b.keys()]
-  #random.shuffle(keys_1)
 
   obj_c = np.zeros(len(probabilities_a) * len(probabilities_b))
   A_eq = np.zeros((len(probabilities_a) + len(probabilities_b), len(probabilities_a) * len(probabilities_b)))
@@ -38,8 +69,8 @@ def LPOptimalCoupling(probabilities_a, probabilities_b):
 
   for i, key_0 in enumerate(keys_0):
     for j, key_1 in enumerate(keys_1):
-      d = hamming_distance(hamming_table, key_0, key_1)
-      obj_c[i * len(probabilities_b) + j] = d + 1.0 if d > 0 else 0
+      d = hamming_distance(hamming_table, key_0, key_1, symmetry_width)
+      obj_c[i * len(probabilities_b) + j] = d + (1.0 if d > 0 else 0)
       A_eq[i, i * len(probabilities_b) + j] = 1
       A_eq[j + len(probabilities_a), i * len(probabilities_b) + j] = 1
   for i, key_0 in enumerate(keys_0):
@@ -58,9 +89,9 @@ def LPOptimalCoupling(probabilities_a, probabilities_b):
       overlap = sol_x[i * len(probabilities_b) + j]
       if overlap == 0:
         continue
-      d = hamming_distance(hamming_table, key_0, key_1)
+      d = hamming_distance(hamming_table, key_0, key_1, symmetry_width)
       avg_coupling += overlap * d
-      if d > 0:
+      if d == 0:
         sum_coupling += overlap
       coupling_structure.append({
         'a': key_0,
@@ -76,7 +107,6 @@ def LPOptimalCoupling(probabilities_a, probabilities_b):
 def NaiveCoupling(probabilities_a, probabilities_b):
   keys_0 = [key for key in probabilities_a.keys()]
   keys_1 = [key for key in probabilities_b.keys()]
-  print(keys_0, keys_1)
   hamming_table = {}
 
   i, j = 0, 0
@@ -146,18 +176,20 @@ def plotCoupling(coupling_structure, group_names, title, avg_coupling, sum_coupl
   overlap = [coupling['overlap'] for coupling in coupling_structure]
   weight=[coupling['weight'] for coupling in coupling_structure]
   fig.append_trace(go.Bar(x=x, 
-                          y=[1 for _ in coupling_structure], 
+                          y=[1 for _ in coupling_structure],
                           width=overlap, 
+                          hovertemplate = 'Width: %{width:.4f}',
                           marker_color=[px.colors.qualitative.Plotly[int(coupling['a'], base=2) % 10] for coupling in coupling_structure],
                           text=[coupling['a'] for coupling in coupling_structure], 
                           name=group_names['a']), row=1, col=1)
   fig.append_trace(go.Bar(x=x, 
                           y=[1 for _ in coupling_structure], 
                           width=overlap, 
+                          hovertemplate = 'Width: %{width:.4f}',
                           marker_color=[px.colors.qualitative.Plotly[int(coupling['b'], base=2) % 10] for coupling in coupling_structure],
                           text=[coupling['b'] for coupling in coupling_structure],
                           name=group_names['b']), row=2, col=1)  
-  fig.append_trace(go.Bar(x=x, y=weight, width=overlap, name='Weight'), row=3, col=1)
+  fig.append_trace(go.Bar(x=x, y=weight, width=overlap, name='Weight', hovertemplate = 'Width: %{width:.4f} Weight: %{y}'), row=3, col=1)
   fig.update_layout(title=title, yaxis=dict(
         showticklabels=False
     ), yaxis2=dict(
@@ -168,11 +200,11 @@ def plotCoupling(coupling_structure, group_names, title, avg_coupling, sum_coupl
   fig.update_traces(showlegend=False)
 
   fig.show()
-  fig.write_html(f"results/coupling_{title}.html")
+  fig.write_image(f"results/coupling_{title}.jpg")
 
 
 pd.set_option('display.max_rows', None)
-p = 0.1
+p = 0.2
 q = p
 values = [math.log(1.0 - p), math.log(p), math.log(q), math.log(1.0-q)]
 memoized_conditional = {}
@@ -181,25 +213,57 @@ memoized_conditional = {}
 probabilities_0 = {'0': math.log(1.0)}
 probabilities_1 = {'1': math.log(1.0)}
 
-#probabilities_1 = {'0000': None, '1110': math.log(1.0)}
-for depth in range(1,5):
+"""
+for depth in range(1,3):
   width = 2 ** depth
   print(width)
   probabilities_0 = numerical.ComputeProbability(probabilities_0, memoized_conditional, width, values)
   probabilities_1 = numerical.ComputeProbability(probabilities_1, memoized_conditional, width, values)
-
-  avg_coupling, sum_coupling, coupling_structure = LPOptimalCoupling(probabilities_0, probabilities_1)
-  print(f'1-{width}: ', avg_coupling)
+  #sum_coupling, coupling_structure = GreedyMaxCoupling(probabilities_0, probabilities_1)
+  sum_coupling, avg_coupling, coupling_structure = LPOptimalCoupling(probabilities_0, probabilities_1)
+  print(f'1-{width}: ', sum_coupling)
+  print(len(probabilities_0))
   plotCoupling(coupling_structure, {'a': 'Root 0', 'b': 'Root 1'}, f'Coupling-1-{width}', avg_coupling, sum_coupling)
+"""
 
-for bits in range(1,5):
+memoized_conditional={}
+group_a = '0011'
+group_b = '0000'
+probabilities_0 = numerical.ComputeProbability({group_a: math.log(1.0)}, memoized_conditional, 8, 4, values)
+#print(probabilities_0)
+probabilities_1 = numerical.ComputeProbability({group_b: math.log(1.0)}, memoized_conditional, 8, 4, values)
+sum_coupling, coupling_structure = GreedyMaxCoupling(probabilities_0, probabilities_1)
+print(f'Coupling 11/00: ', sum_coupling)
+sum_coupling, avg_coupling, coupling_structure = LPOptimalCoupling(probabilities_0, probabilities_1, 4)
+print(f'2->4: ', sum_coupling)
+plotCoupling(coupling_structure, {'a': '0011', 'b': '0000'}, f'Coupling-1>4 p={p} q={q}', avg_coupling, sum_coupling)
+
+memoized_conditional={}
+group_a = '1010'
+group_b = '0000'
+probabilities_0 = numerical.ComputeProbability({group_a: math.log(1.0)}, memoized_conditional, 8, 4, values)
+#print(sum)
+probabilities_1 = numerical.ComputeProbability({group_b: math.log(1.0)}, memoized_conditional, 8, 4, values)
+#print(probabilities_1)
+sum_coupling, coupling_structure = GreedyMaxCoupling(probabilities_0, probabilities_1)
+print(f'Coupling 0011/0000: ', sum_coupling)
+sum_coupling, avg_coupling, coupling_structure = LPOptimalCoupling(probabilities_0, probabilities_1, 4)
+print(f'0011->8: ', sum_coupling)
+plotCoupling(coupling_structure, {'a': '1010', 'b': '0000'}, f'Coupling-01>4 p={p} q={q}', avg_coupling, sum_coupling)
+
+"""for bits in range(2,17):
+  memoized_conditional = {}
   width = 2 ** math.ceil(math.log(bits, 2))
   print(bits, width)
-  group_a = '0' * bits + '0' * (width - bits)
+  group_a = '0' * width
   group_b = '1' * bits + '0' * (width - bits)
   probabilities_0 = numerical.ComputeProbability({group_a: math.log(1.0)}, memoized_conditional, 2*width, values)
+  #print(probabilities_0)
   probabilities_1 = numerical.ComputeProbability({group_b: math.log(1.0)}, memoized_conditional, 2*width, values)
 
-  avg_coupling, sum_coupling, coupling_structure = LPOptimalCoupling(probabilities_0, probabilities_1)
-  print(f'Coupling {bits}-{2*bits}: ', avg_coupling)
-  plotCoupling(coupling_structure, {'a': f'Parent {group_a}', 'b': f'Parent {group_b}'}, f'Coupling-{bits}-{2*bits}', avg_coupling, sum_coupling)
+  sum_coupling, coupling_structure = GreedyMaxCoupling(probabilities_0, probabilities_1)
+  print(f'Coupling {bits}-{2*bits}: ', sum_coupling)
+  #sum_coupling, avg_coupling, coupling_structure = LPOptimalCoupling(probabilities_0, probabilities_1)
+  #print(f'Coupling {bits}-{2*bits}: ', sum_coupling)
+  #plotCoupling(coupling_structure, {'a': f'Parent {group_a}', 'b': f'Parent {group_b}'}, f'Coupling-{bits}-{2*bits}', avg_coupling, sum_coupling)
+"""
