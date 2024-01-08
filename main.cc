@@ -264,29 +264,40 @@ double ComputeConditionalHammingProbability(int width, int weight, int parent_we
     // f + g + h = width - parent_weight
     // h + 2*g = u
     // f,g,h >= 0
+    double running_probability = -std::numeric_limits<double>::infinity();
     for (int i = std::max(parent_weight - v, 0); i <= parent_weight - v / 2.0; ++i) {
       int j = v - parent_weight + i;
       int k = v - 2 * j;
+      //std::cout << "    " << i << " " << j << " " << k << std::endl;
       assert(i+j+k == parent_weight);
       assert(k+2*j == v);
       assert(i >= 0 && j >= 0 && k >= 0);
       double prob_a = base_cases.second[0] * i + base_cases.second[2] * j + (base_cases.second[1] + log(2.0)) * k;
       double weight_a = logfactorial(parent_weight) - logfactorial(i) - logfactorial(j) - logfactorial(k);
-      
-      for (int f = std::max(width - parent_weight - u, 0); f <= width - parent_weight - u / 2.0; ++f) {
-        int g = u - width + parent_weight + f;
-        int h = u - 2 * g;
-        assert(f+g+h == width - parent_weight);
-        assert(h+2*g == u);
-        assert(f >= 0 && g >= 0 && h >= 0);
-        double prob_b = base_cases.first[0] * f + base_cases.first[2] * g + (base_cases.first[1] + log(2.0)) * h;
-        double weight_b = logfactorial(width - parent_weight) - logfactorial(f) - logfactorial(g) - logfactorial(h);
-        double probability = prob_a + prob_b + weight_a + weight_b;
-        if (total_probability == -std::numeric_limits<double>::infinity()) {
-          total_probability = probability;
-        } else if (probability != -std::numeric_limits<double>::infinity()) {
-          total_probability = logadd(total_probability, probability);
-        }
+      double probability = prob_a + weight_a;
+      if (running_probability == -std::numeric_limits<double>::infinity()) {
+        running_probability = probability;
+      } else if (probability != -std::numeric_limits<double>::infinity()) {
+        running_probability = logadd(running_probability, probability);
+      }
+    }
+    for (int f = std::max(width - parent_weight - u, 0); f <= width - parent_weight - u / 2.0; ++f) {
+      int g = u - width + parent_weight + f;
+      int h = u - 2 * g;
+      //std::cout << "      " << f << " " << g << " " << h << std::endl;
+      assert(f+g+h == width - parent_weight);
+      assert(h+2*g == u);
+      assert(f >= 0 && g >= 0 && h >= 0);
+      double prob_b = base_cases.first[0] * f + base_cases.first[2] * g + (base_cases.first[1] + log(2.0)) * h;
+      double weight_b = logfactorial(width - parent_weight) - logfactorial(f) - logfactorial(g) - logfactorial(h);
+      double probability = prob_b + weight_b;
+      if (running_probability != -std::numeric_limits<double>::infinity()) {
+        probability += running_probability;
+      }
+      if (total_probability == -std::numeric_limits<double>::infinity()) {
+        total_probability = probability;
+      } else if (probability != -std::numeric_limits<double>::infinity()) {
+        total_probability = logadd(total_probability, probability);
       }
     }
   }
@@ -305,7 +316,7 @@ std::vector<double> ComputeHammingProbability(const std::vector<double>& parents
       //std::cout << " " << i << " " << j << " " << probability << std::endl;
       if (total_probability == -std::numeric_limits<double>::infinity()) {
         total_probability = probability;
-      } else {
+      } else if (probability == -std::numeric_limits<double>::infinity()) {
         total_probability = logadd(total_probability, probability);
       }
     }
@@ -322,7 +333,7 @@ double ComputeTotalVariation(const std::vector<double>& probs_a, const std::vect
       double probability = probs_a[i] + probs_b[j];
       if (total_variation == -std::numeric_limits<double>::infinity()) {
         total_variation = probability;
-      } else {
+      } else if (probability != -std::numeric_limits<double>::infinity()) {
         total_variation = logadd(total_variation, probability);
       }
     }
@@ -355,7 +366,7 @@ double GreedyMaxCoupling(const std::vector<double>& probs_a, const std::vector<d
     double overlap = std::min(prob_a, prob_b);
     if (sum_overlap == -std::numeric_limits<double>::infinity()) {
       sum_overlap = overlap;
-    } else {
+    } else if (overlap == -std::numeric_limits<double>::infinity()) {
       sum_overlap = logadd(sum_overlap, overlap);
     }
   }
