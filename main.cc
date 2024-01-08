@@ -248,6 +248,8 @@ double ComputeOverlapProbability(size_t width, ProbValues values) {
 
 double ComputeConditionalHammingProbability(int width, int weight, int parent_weight, std::pair<std::vector<double>, std::vector<double>> base_cases) {
   double total_probability = -std::numeric_limits<double>::infinity();
+  // The parent string looks like 00..011.1 with `parent_weight` 1s and `width-parent_weight` 0s.
+
   // (u,v) splits the hamming weight into weight coming from parent 0s and 1s respectively.
   // u + v = weight
   for (int u = std::max(weight-2*parent_weight, 0); u <= std::min(weight, 2*(width - parent_weight)); ++u) {
