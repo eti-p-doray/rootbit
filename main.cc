@@ -4,10 +4,14 @@
 //
 //  Created by Etienne Pierre-doray on 2023-12-31.
 //
-#include <numbers>
+//#include <numbers>
+#include <algorithm>
 #include <iostream>
 #include <cassert>
 #include <numeric>
+#include <vector>
+#include <cmath>
+#include <future>
 
 #include <bitset>
 #include <unordered_map>
@@ -104,10 +108,21 @@ double logmul(double lhs, double rhs) {
   return lhs + rhs;
 }
 
+double fabs(double x) {
+  if (x < 0) return -x;
+  return x;
+}
+
 double logadd(double lhs, double rhs) {
-  double c = std::min(lhs, rhs);
-  return c + log(exp(lhs - c) + exp(rhs - c));
-  //return std::max(lhs, rhs);
+  double d = fabs(lhs - rhs);
+  double c = std::max(lhs, rhs);
+  if (d > 30) {
+    return c;
+  }
+  if (d > 9) {
+    return c + exp(-d);
+  }
+  return c + log1p(exp(-d));
 }
 
 double logsub(double lhs, double rhs) {
@@ -120,17 +135,10 @@ double logfactorial_impl(size_t n) {
   return log(n) + logfactorial_impl(n-1);
 }
 
-/*double logfactorial_impl(size_t n) {
-  if (n == 0 || n == 1) return 0;
-  //return log(tgamma(n+1));
-  double x = n;
-  return x * log(x) - x + (log(x * (1.0 + 4.0*x*(1.0+2.0*x)))) / 6.0 + log(std::numbers::pi) / 2.0;
-}*/
-
 double logfactorial(size_t n) {
   const static auto cache = []() {
     std::vector<double> c;
-    for (size_t i = 0; i < 1024; ++i) {
+    for (size_t i = 0; i < 2048; ++i) {
       c.push_back(logfactorial_impl(i));
     }
     return c;
@@ -145,13 +153,15 @@ struct ProbValues {
   double q_1;
 };
 
-std::pair<std::vector<double>, std::vector<double>> ComputeBaseConditionalProbability(ProbValues values) {
-  std::vector<double> result_0 = {
+using BaseTransitions = std::pair<std::array<double, 3>, std::array<double, 3>>;
+
+BaseTransitions ComputeBaseConditionalProbability(ProbValues values) {
+  std::array<double, 3> result_0 = {
     logmul(values.p_1, values.p_1),
     logmul(values.p_1, values.p),
     logmul(values.p, values.p)
   };
-  std::vector<double> result_1 = {
+  std::array<double, 3> result_1 = {
     logmul(values.q, values.q),
     logmul(values.q_1, values.q),
     logmul(values.q_1, values.q_1)
@@ -246,7 +256,59 @@ double ComputeOverlapProbability(size_t width, ProbValues values) {
   return exp(sum_overlap);
 }
 
-double ComputeConditionalHammingProbability(int width, int weight, int parent_weight, std::pair<std::vector<double>, std::vector<double>> base_cases) {
+using HammingConditionalPart = double[4096 * 4096];
+
+double ComputeConditionalHammingProbabilityPart1(int v, int parent_weight, const BaseTransitions& base_cases) {
+  // (i,j,k) describe all the ways parent 1s can produce u, with i:1->00, j:1->11 and k:1->01.
+  // i + j + k = parent_weight
+  // k + 2*j = v
+  // i,j,k >= 0
+  double running_probability = -std::numeric_limits<double>::infinity();
+  for (int i = std::max(parent_weight - v, 0); i <= parent_weight - v / 2.0; ++i) {
+    int j = v - parent_weight + i;
+    int k = v - 2 * j;
+    //std::cout << "    " << i << " " << j << " " << k << std::endl;
+    //assert(i+j+k == parent_weight);
+    //assert(k+2*j == v);
+    //assert(i >= 0 && j >= 0 && k >= 0);
+    double prob_a = base_cases.second[0] * i + base_cases.second[2] * j + (base_cases.second[1] + log(2.0)) * k;
+    double weight_a = logfactorial(parent_weight) - logfactorial(i) - logfactorial(j) - logfactorial(k);
+    double probability = prob_a + weight_a;
+    if (running_probability == -std::numeric_limits<double>::infinity()) {
+      running_probability = probability;
+    } else if (probability != -std::numeric_limits<double>::infinity()) {
+      running_probability = logadd(running_probability, probability);
+    }
+  }
+  return running_probability;
+}
+
+double ComputeConditionalHammingProbabilityPart0(int u, int parent_weight, const BaseTransitions& base_cases) {
+  // (f,g,h) describe all the ways parent 0s can produce v, with f:0->00, g:0->11 and h:0->01.
+  // f + g + h = width - parent_weight
+  // h + 2*g = u
+  // f,g,h >= 0
+  double running_probability = -std::numeric_limits<double>::infinity();
+  for (int f = std::max(parent_weight - u, 0); f <= parent_weight - u / 2.0; ++f) {
+    int g = u - parent_weight + f;
+    int h = u - 2 * g;
+    //std::cout << "      " << f << " " << g << " " << h << std::endl;
+    //assert(f+g+h == width - parent_weight);
+    //assert(h+2*g == u);
+    //assert(f >= 0 && g >= 0 && h >= 0);
+    double prob_b = base_cases.first[0] * f + base_cases.first[2] * g + (base_cases.first[1] + log(2.0)) * h;
+    double weight_b = logfactorial(parent_weight) - logfactorial(f) - logfactorial(g) - logfactorial(h);
+    double probability = prob_b + weight_b;
+    if (running_probability == -std::numeric_limits<double>::infinity()) {
+      running_probability = probability;
+    } else if (probability != -std::numeric_limits<double>::infinity()) {
+      running_probability = logadd(running_probability, probability);
+    }
+  }
+  return running_probability;
+}
+
+double ComputeConditionalHammingProbability(double table0[], double table1[], int width, int weight, int parent_weight) {
   double total_probability = -std::numeric_limits<double>::infinity();
   // The parent string looks like 00..011.1 with `parent_weight` 1s and `width-parent_weight` 0s.
 
@@ -255,106 +317,43 @@ double ComputeConditionalHammingProbability(int width, int weight, int parent_we
   for (int u = std::max(weight-2*parent_weight, 0); u <= std::min(weight, 2*(width - parent_weight)); ++u) {
     int v = weight - u;
     
-    // (i,j,k) describe all the ways parent 1s can produce u, with i:1->00, j:1->11 and k:1->01.
-    // i + j + k = parent_weight
-    // k + 2*j = v
-    // i,j,k >= 0
-    
-    // (f,g,h) describe all the ways parent 0s can produce v, with f:0->00, g:0->11 and h:0->01.
-    // f + g + h = width - parent_weight
-    // h + 2*g = u
-    // f,g,h >= 0
-    double running_probability = -std::numeric_limits<double>::infinity();
-    for (int i = std::max(parent_weight - v, 0); i <= parent_weight - v / 2.0; ++i) {
-      int j = v - parent_weight + i;
-      int k = v - 2 * j;
-      //std::cout << "    " << i << " " << j << " " << k << std::endl;
-      assert(i+j+k == parent_weight);
-      assert(k+2*j == v);
-      assert(i >= 0 && j >= 0 && k >= 0);
-      double prob_a = base_cases.second[0] * i + base_cases.second[2] * j + (base_cases.second[1] + log(2.0)) * k;
-      double weight_a = logfactorial(parent_weight) - logfactorial(i) - logfactorial(j) - logfactorial(k);
-      double probability = prob_a + weight_a;
-      if (running_probability == -std::numeric_limits<double>::infinity()) {
-        running_probability = probability;
-      } else if (probability != -std::numeric_limits<double>::infinity()) {
-        running_probability = logadd(running_probability, probability);
-      }
-    }
-    for (int f = std::max(width - parent_weight - u, 0); f <= width - parent_weight - u / 2.0; ++f) {
-      int g = u - width + parent_weight + f;
-      int h = u - 2 * g;
-      //std::cout << "      " << f << " " << g << " " << h << std::endl;
-      assert(f+g+h == width - parent_weight);
-      assert(h+2*g == u);
-      assert(f >= 0 && g >= 0 && h >= 0);
-      double prob_b = base_cases.first[0] * f + base_cases.first[2] * g + (base_cases.first[1] + log(2.0)) * h;
-      double weight_b = logfactorial(width - parent_weight) - logfactorial(f) - logfactorial(g) - logfactorial(h);
-      double probability = prob_b + weight_b;
-      if (running_probability != -std::numeric_limits<double>::infinity()) {
-        probability += running_probability;
-      }
-      if (total_probability == -std::numeric_limits<double>::infinity()) {
-        total_probability = probability;
-      } else if (probability != -std::numeric_limits<double>::infinity()) {
-        total_probability = logadd(total_probability, probability);
-      }
+    double probability = table1[v] + table0[u];
+    if (total_probability == -std::numeric_limits<double>::infinity()) {
+      total_probability = probability;
+    } else if (probability != -std::numeric_limits<double>::infinity()) {
+      total_probability = logadd(total_probability, probability);
     }
   }
   return total_probability;
 }
 
-std::vector<double> ComputeHammingProbability(const std::vector<double>& parents, size_t width, ProbValues values) {
-  auto base_cases = ComputeBaseConditionalProbability(values);
-  std::vector<double> results;
+
+std::vector<double> ComputeHammingProbabilities(const std::vector<double>& parents, size_t width, ProbValues values) {
+  auto transitions = ComputeBaseConditionalProbability(values);
+
+  std::vector<double> results(width+1, -std::numeric_limits<double>::infinity());
   int half_width = int(width / 2);
-  for (int i = 0; i <= width; ++i) {
-    double total_probability = -std::numeric_limits<double>::infinity();
-    for (int j = 0; j < parents.size(); ++j) {
-      if (parents[j] == -std::numeric_limits<double>::infinity()) continue;
-      double probability = ComputeConditionalHammingProbability(half_width, i, j, base_cases) + parents[j];
-      //std::cout << " " << i << " " << j << " " << probability << std::endl;
-      if (total_probability == -std::numeric_limits<double>::infinity()) {
-        total_probability = probability;
-      } else if (probability == -std::numeric_limits<double>::infinity()) {
-        total_probability = logadd(total_probability, probability);
+  for (int j = 0; j < parents.size(); ++j) {
+    if (parents[j] == -std::numeric_limits<double>::infinity()) continue;
+
+    std::vector<double> table0(width+1, 0.0);
+    std::vector<double> table1(width+1, 0.0);
+    for (int k = 0; k <= width; ++k) {
+      table1[k] = ComputeConditionalHammingProbabilityPart1(k, j, transitions);
+      table0[k] = ComputeConditionalHammingProbabilityPart0(k, half_width-j, transitions);
+    }
+
+    for (int i = 0; i <= width; ++i) {
+      if (parents[j] < results[i] - 30.0) continue;
+      double probability = ComputeConditionalHammingProbability(table0.data(), table1.data(), half_width, i, j) + parents[j];
+      if (results[i] == -std::numeric_limits<double>::infinity()) {
+        results[i] = probability;
+      } else if (probability != -std::numeric_limits<double>::infinity()) {
+        results[i] = logadd(results[i], probability);
       }
     }
-    results.push_back(total_probability);
   }
   return results;
-}
-
-double ComputeTotalVariation(const std::vector<double>& probs_a, const std::vector<double>& probs_b) {
-  double total_variation = -std::numeric_limits<double>::infinity();
-  for (size_t i = 0; i < probs_a.size(); ++i) {
-    for (size_t j = 0; j < probs_b.size(); ++j) {
-      if (i == j) continue;
-      double probability = probs_a[i] + probs_b[j];
-      if (total_variation == -std::numeric_limits<double>::infinity()) {
-        total_variation = probability;
-      } else if (probability != -std::numeric_limits<double>::infinity()) {
-        total_variation = logadd(total_variation, probability);
-      }
-    }
-  }
-  return total_variation;
-}
-
-double GreedyMaxCoupling(const std::unordered_map<Bits, double> probs_a, const std::unordered_map<Bits, double> probs_b) {
-  double sum_overlap = -std::numeric_limits<double>::infinity();
-  for (auto [repr, prob_a] : probs_a) {
-    if (!probs_b.count(repr)) continue;
-    double prob_b = probs_b.at(repr);
-    if (prob_a == -std::numeric_limits<double>::infinity() || prob_b == -std::numeric_limits<double>::infinity()) continue;
-    double overlap = std::min(prob_a, prob_b);
-    if (sum_overlap == -std::numeric_limits<double>::infinity()) {
-      sum_overlap = overlap;
-    } else {
-      sum_overlap = logadd(sum_overlap, overlap);
-    }
-  }
-  return exp(sum_overlap);
 }
 
 double GreedyMaxCoupling(const std::vector<double>& probs_a, const std::vector<double>& probs_b) {
@@ -366,7 +365,7 @@ double GreedyMaxCoupling(const std::vector<double>& probs_a, const std::vector<d
     double overlap = std::min(prob_a, prob_b);
     if (sum_overlap == -std::numeric_limits<double>::infinity()) {
       sum_overlap = overlap;
-    } else if (overlap == -std::numeric_limits<double>::infinity()) {
+    } else if (overlap != -std::numeric_limits<double>::infinity()) {
       sum_overlap = logadd(sum_overlap, overlap);
     }
   }
@@ -404,51 +403,31 @@ T variance(const std::vector<T> &vec) {
 }
 
 int main(int argc, const char * argv[]) {
-  double p = 0.20;
-  double q = 0.20;
+  double p = 0.125;//0.5 - sqrt(1.0/8)-1.0/64;
+  double q = p;
   ProbValues values {log(p), log(q), log(1-p), log(1-q)};
   
   std::vector<double> probs_a = {-std::numeric_limits<double>::infinity(), log(1)};
   std::vector<double> probs_b = {log(1), -std::numeric_limits<double>::infinity()};
-  for (int i = 1; i <= 12; ++i) {
+  for (int i = 1; i <= 16; ++i) {
     int width = pow(2, i);
     //std::cout << width << std::endl;
-    probs_a = ComputeHammingProbability(probs_a, width, values);
-    probs_b = ComputeHammingProbability(probs_b, width, values);
+    probs_a = ComputeHammingProbabilities(probs_a, width, values);
+    probs_b = ComputeHammingProbabilities(probs_b, width, values);
     auto mean_a = mean(probs_a);
     auto variance_a = variance(probs_a);
     //auto z_a = (mean_a - width / 2) /
     auto mean_b = mean(probs_b);
     auto variance_b = variance(probs_b);
-    std::cout << variance_a << " " << variance_a / width << std::endl;
-    std::cout << variance_b << " " << variance_b / width << std::endl;
+    //std::cout << variance_a << " " << variance_a / width << std::endl;
+    //std::cout << variance_b << " " << variance_b / width << std::endl;
     //std::cout << mean_b << " " << variance_b << " " << mean_b - width/2  << std::endl;
-    std::cout << width << ", " << mean_a - width * p / (p + q)  << ", " << mean_b - width * p / (p + q) << std::endl;
-    for (size_t j = 0; j < probs_a.size(); ++j) {
+    //std::cout << width << ", " << mean_a - width * p / (p + q)  << ", " << mean_b - width * p / (p + q) << std::endl;
+    /*for (size_t j = 0; j < probs_a.size(); ++j) {
       std::cout << " " << j << ", " << exp(probs_a[j]) << ", " << exp(probs_b[j]) << std::endl;
-    }
+    } */   
     double tv = GreedyMaxCoupling(probs_a, probs_b);
-    //std::cout << width << " " << tv << std::endl;
+    std::cout << width << " " << tv << " " << mean_a << " " << mean_b << " " << variance_a << " " << variance_b << std::endl;
   }
-  
-  /*for (size_t i = 1; i <= 4; ++i) {
-    std::unordered_map<std::tuple<Bits, Bits, size_t>, double, tuple_hash> memoized;
-    size_t width = exp2(ceil(log2(i)));
-    Bits repr_a = (1 << i) - 1;
-    Bits repr_b = 0;
-    std::cout << i << " " << width << " " << repr_a << " " << repr_b << std::endl;
-    std::unordered_map<Bits, double> parent_a = {{repr_a, log(1)}};
-    std::unordered_map<Bits, double> parent_b = {{repr_b, log(1)}};
-    auto probabilities_a = ComputeProbability(parent_a, memoized, 2*width, 2, values);
-    auto probabilities_b = ComputeProbability(parent_b, memoized, 2*width, 2, values);
-    for (auto [repr, value] : probabilities_a) {
-      std::cout << repr << " " << exp(value) << std::endl;
-    }
-    for (auto [repr, value] : probabilities_b) {
-      std::cout << repr << " " << exp(value) << std::endl;
-    }
-    double coupling = GreedyMaxCoupling(probabilities_a, probabilities_b);
-    std::cout << i << " " << coupling << std::endl;
-  }*/
   return 0;
 }
