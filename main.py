@@ -205,7 +205,7 @@ def plotCoupling(coupling_structure, group_names, title, avg_coupling, sum_coupl
 
 pd.set_option('display.max_rows', None)
 p = 0.2
-q = p
+q = 0.05
 values = [math.log(1.0 - p), math.log(p), math.log(q), math.log(1.0-q)]
 memoized_conditional = {}
 
@@ -213,43 +213,17 @@ memoized_conditional = {}
 probabilities_0 = {'0': math.log(1.0)}
 probabilities_1 = {'1': math.log(1.0)}
 
-"""
-for depth in range(1,3):
+
+for depth in range(1,5):
   width = 2 ** depth
   print(width)
-  probabilities_0 = numerical.ComputeProbability(probabilities_0, memoized_conditional, width, values)
-  probabilities_1 = numerical.ComputeProbability(probabilities_1, memoized_conditional, width, values)
+  probabilities_0 = numerical.ComputeProbability(probabilities_0, memoized_conditional, width, width, values)
+  probabilities_1 = numerical.ComputeProbability(probabilities_1, memoized_conditional, width, width, values)
   #sum_coupling, coupling_structure = GreedyMaxCoupling(probabilities_0, probabilities_1)
-  sum_coupling, avg_coupling, coupling_structure = LPOptimalCoupling(probabilities_0, probabilities_1)
-  print(f'1-{width}: ', sum_coupling)
+  sum_coupling, avg_coupling, coupling_structure = LPOptimalCoupling(probabilities_0, probabilities_1, width)
+  print(f'1-{width}: ', sum_coupling, avg_coupling)
   print(len(probabilities_0))
-  plotCoupling(coupling_structure, {'a': 'Root 0', 'b': 'Root 1'}, f'Coupling-1-{width}', avg_coupling, sum_coupling)
-"""
-
-memoized_conditional={}
-group_a = '0011'
-group_b = '0000'
-probabilities_0 = numerical.ComputeProbability({group_a: math.log(1.0)}, memoized_conditional, 8, 4, values)
-#print(probabilities_0)
-probabilities_1 = numerical.ComputeProbability({group_b: math.log(1.0)}, memoized_conditional, 8, 4, values)
-sum_coupling, coupling_structure = GreedyMaxCoupling(probabilities_0, probabilities_1)
-print(f'Coupling 11/00: ', sum_coupling)
-sum_coupling, avg_coupling, coupling_structure = LPOptimalCoupling(probabilities_0, probabilities_1, 4)
-print(f'2->4: ', sum_coupling)
-plotCoupling(coupling_structure, {'a': '0011', 'b': '0000'}, f'Coupling-1>4 p={p} q={q}', avg_coupling, sum_coupling)
-
-memoized_conditional={}
-group_a = '1010'
-group_b = '0000'
-probabilities_0 = numerical.ComputeProbability({group_a: math.log(1.0)}, memoized_conditional, 8, 4, values)
-#print(sum)
-probabilities_1 = numerical.ComputeProbability({group_b: math.log(1.0)}, memoized_conditional, 8, 4, values)
-#print(probabilities_1)
-sum_coupling, coupling_structure = GreedyMaxCoupling(probabilities_0, probabilities_1)
-print(f'Coupling 0011/0000: ', sum_coupling)
-sum_coupling, avg_coupling, coupling_structure = LPOptimalCoupling(probabilities_0, probabilities_1, 4)
-print(f'0011->8: ', sum_coupling)
-plotCoupling(coupling_structure, {'a': '1010', 'b': '0000'}, f'Coupling-01>4 p={p} q={q}', avg_coupling, sum_coupling)
+  #plotCoupling(coupling_structure, {'a': 'Root 0', 'b': 'Root 1'}, f'Coupling-1-{width}', avg_coupling, sum_coupling)
 
 """for bits in range(2,17):
   memoized_conditional = {}
