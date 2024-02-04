@@ -47,7 +47,7 @@ Bits LeftHalf(Bits value, size_t half_width) {
 size_t HammingDistance(Bits lhs, Bits rhs, size_t width, size_t symmetry) {
   if (width == 1) return lhs != rhs;
   size_t half_width = width / 2;
-  size_t d1 = 
+  size_t d1 =
     HammingDistance(RightHalf(lhs, half_width), RightHalf(rhs, half_width), half_width, symmetry) +
     HammingDistance(LeftHalf(lhs, half_width), LeftHalf(rhs, half_width), half_width, symmetry);
   if (width > symmetry) {
@@ -57,6 +57,30 @@ size_t HammingDistance(Bits lhs, Bits rhs, size_t width, size_t symmetry) {
     HammingDistance(RightHalf(lhs, half_width), LeftHalf(rhs, half_width), half_width, symmetry) +
     HammingDistance(LeftHalf(lhs, half_width), RightHalf(rhs, half_width), half_width, symmetry);
   return std::min(d1, d2);
+}
+
+double Hamming1stMoment(Bits value, size_t width) {
+  int moment = 0;
+  int weight = 0;
+  for (size_t i = 0; i < width; ++i) {
+    if (value.test(i)) {
+      moment += i;
+      weight += 1;
+    }
+  }
+  return double(moment) / double(weight);
+}
+
+double Hamming2ndMoment(Bits value, size_t width) {
+  int moment = 0;
+  int weight = 0;
+  for (size_t i = 0; i < width; ++i) {
+    if (value.test(i)) {
+      moment += i*i;
+      weight += 1;
+    }
+  }
+  return double(moment) / double(weight);
 }
 
 std::vector<Bits> GenerateEquivalentClassesImpl(std::unordered_map<std::pair<size_t, size_t>, std::vector<Bits>, pair_hash>& table, size_t sum, size_t width, size_t symmetry) {
@@ -317,18 +341,23 @@ int main(int argc, const char * argv[]) {
     probs_a = ComputeProbability(probs_a, memoized, width, width, values);
     probs_b = ComputeProbability(probs_b, memoized, width, width, values);
     
-    /*std::vector<std::unordered_map<Bits, std::pair<double, double>>> bucketed_probs(width+1);
+    std::vector<std::unordered_map<Bits, std::pair<double, double>>> bucketed_probs(width+1);
     for (const auto& k_v : probs_a) {
       bucketed_probs[k_v.first.count()].emplace(k_v.first, std::make_pair(k_v.second, probs_b.at(k_v.first)));
     }
     for (size_t i = 0; i < bucketed_probs.size(); ++i) {
       for (const auto& k_v : bucketed_probs[i]) {
-        std::cout << i << " " << GetEquivalentClassSize(k_v.first, width, width) << " " << k_v.first << " " << Keep(~k_v.first, width) << " " << HammingDistance(k_v.first, Keep(~k_v.first, width), width, width) << " " << exp(k_v.second.first) << " " << exp(k_v.second.second) << std::endl;
+        double min_prob = std::min(exp(k_v.second.first), exp(k_v.second.second));
+        double prob_a = exp(k_v.second.first) - min_prob;
+        double prob_b = exp(k_v.second.second) - min_prob;
+        double moment_1 = Hamming1stMoment(k_v.first, width);
+        double moment_2 = Hamming2ndMoment(k_v.first, width) - moment_1 * moment_1;
+        std::cout << i << ", " << GetEquivalentClassSize(k_v.first, width, width) << ", " << k_v.first << ", " << Keep(~k_v.first, width) << ", " << HammingDistance(k_v.first, Keep(~k_v.first, width), width, width) << ", " << moment_1 << ", " << moment_2 << ", " << exp(k_v.second.first) << ", " << exp(k_v.second.second) << std::endl;
       }
     }
     for (size_t i = 0; i < bucketed_probs.size(); ++i) {
       std::cout << i << " " << bucketed_probs[i].size() << std::endl;
-    }*/
+    }
   }
   return 0;
 }

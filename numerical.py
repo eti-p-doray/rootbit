@@ -8,12 +8,20 @@ def logmul(lhs: float, rhs: float) -> float:
   return lhs + rhs
 
 def logadd(lhs: float, rhs: float) -> float:
-  c = min(lhs, rhs)
-  return c + math.log(math.exp(lhs - c) + math.exp(rhs - c))
+  c = max(lhs, rhs)
+  d = abs(lhs - rhs);
+  return c + math.log1p(math.exp(-d))
 
 def logsub(lhs: float, rhs: float) -> float:
   c = min(lhs, rhs)
   return c + math.log(math.exp(lhs - c) - math.exp(rhs - c))
+
+_factorial_table = [0]
+for i in range(1, 65536):
+  _factorial_table.append(_factorial_table[-1] + math.log(i))
+
+def logfactorial(n: int) -> float:
+  return _factorial_table[n]
 
 def ComputeConditionalProbability(memoized_conditional: Dict[Tuple[str, str], float], width: int, symmetry_width: int, repr: str, parent_repr: str, values: List[float]) -> float:
   if (width == 2):
@@ -73,3 +81,63 @@ def ComputeProbability(parent_probabilities: Dict[str, float], memoized_conditio
     total_probability = logmul(total_probability, math.log(coefficient))
     result[repr] = total_probability
   return result
+
+
+# 1-p, p, q, 1-q
+def ComputeConditionalHammingProbabilityPart1(v: int, parent_weight: int, values: List[float]) -> float:
+  n = 2 * parent_weight;
+  return values[3] * v + (values[2]) * (n - v) + logfactorial(n) - logfactorial(v) - logfactorial(n - v);
+
+def ComputeConditionalHammingProbabilityPart0(u: int, parent_weight: int, values: List[float]) -> float:
+  n = 2 * parent_weight;
+  return values[1] * u + (values[0]) * (n - u) + logfactorial(n) - logfactorial(u) - logfactorial(n - u);
+
+def ComputeConditionalHammingProbability(width: int, weight: int, parent_weight: int, values: List[float]) -> float:
+  total_probability = None;
+  # The parent string looks like 00..011.1 with `parent_weight` 1s and `width-parent_weight` 0s.
+
+  # (u,v) splits the hamming weight into weight coming from parent 0s and 1s respectively.
+  # u + v = weight
+  for u in range(max(weight-2*parent_weight, 0), min(weight, 2*(width - parent_weight)) + 1):
+    v = weight - u;
+    
+    probability = ComputeConditionalHammingProbabilityPart1(v, parent_weight, values) + ComputeConditionalHammingProbabilityPart0(u, width-parent_weight, values)
+    if total_probability is None:
+      total_probability = probability;
+    elif probability is not None:
+      total_probability = logadd(total_probability, probability)
+  return total_probability;
+
+def ComputeHammingProbabilities(parents: List[float], width: int, values: List[float]):
+  results = [None] * (width + 1)
+  half_width = width // 2
+  for j in range(0, len(parents)):
+    if parents[j] is None:
+      continue
+    
+    for i in range(0, width+1):
+      probability = ComputeConditionalHammingProbability(half_width, i, j, values)
+      probability += parents[j]
+      if results[i] is None:
+        results[i] = probability
+      elif probability is not None:
+        results[i] = logadd(results[i], probability)
+  return results
+
+def mean(values: List[float]):
+  if len(values) <= 1:
+    return 0.0
+  mean = 0.0
+  for i in range(0, len(values)):
+    mean += i * math.exp(values[i])
+  return mean
+
+
+def variance(values: List[float]):
+  if len(values) <= 1:
+    return 0.0
+  m = mean(values)
+  v = 0.0
+  for i in range(0, len(values)):
+    v += (i-m) * (i-m) * math.exp(values[i])
+  return v

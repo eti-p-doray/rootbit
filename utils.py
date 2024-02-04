@@ -51,3 +51,21 @@ def GetEquivalentClassSize(value: str, width: int, symmetry_width: int) -> int:
       return left * right * 2
     return left * right
   return left * left
+
+def HammingDistance(table: Dict[Tuple[str, str], int], lhs, rhs, symmetry_width):
+  if (lhs, rhs) in table:
+    return table[(lhs, rhs)]
+  width = len(lhs)
+  if width == 1:
+    return int(lhs != rhs)
+  half_width = width // 2
+  d1 = HammingDistance(table, lhs[0:half_width], rhs[0:half_width], symmetry_width) + HammingDistance(table, lhs[half_width:], rhs[half_width:], symmetry_width)
+  if width > symmetry_width:
+    return d1
+  d2 = HammingDistance(table, lhs[0:half_width], rhs[half_width:], symmetry_width) + HammingDistance(table, lhs[half_width:], rhs[0:half_width], symmetry_width)
+  d = min(d1, d2)
+  table[(lhs, rhs)] = d
+  return d
+
+def HammingWeight(s):
+  return s.count('1')
