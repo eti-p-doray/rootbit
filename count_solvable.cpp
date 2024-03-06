@@ -151,8 +151,6 @@ double ComputeOverlapProbability(size_t width, ProbValues values) {
   return exp(sum_overlap);
 }
 
-using HammingConditionalPart = double[4096 * 4096];
-
 double ComputeConditionalHammingProbabilityPart1(int v, int parent_weight, const ProbValues& values) {
   int n = 2 * parent_weight;
   return values.q_1 * v + (values.q) * (n - v) + logfactorial(n) - logfactorial(v) - logfactorial(n - v);

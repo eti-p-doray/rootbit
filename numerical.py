@@ -2,19 +2,25 @@ from collections import defaultdict
 from typing import List, Dict, Tuple
 import math
 
+import numpy as np
 import utils
+import numpy.typing as npt
 
 def logmul(lhs: float, rhs: float) -> float:
   return lhs + rhs
 
 def logadd(lhs: float, rhs: float) -> float:
+  if lhs is None: return rhs
+  if rhs is None: return lhs
   c = max(lhs, rhs)
-  d = abs(lhs - rhs);
+  d = abs(lhs - rhs)
   return c + math.log1p(math.exp(-d))
 
 def logsub(lhs: float, rhs: float) -> float:
-  c = min(lhs, rhs)
-  return c + math.log(math.exp(lhs - c) - math.exp(rhs - c))
+  d = abs(lhs - rhs)
+  if d < 1e-10: return None
+  #print(lhs, rhs)
+  return math.log(math.exp(lhs) - math.exp(rhs))
 
 _factorial_table = [0]
 for i in range(1, 65536):
@@ -123,6 +129,64 @@ def ComputeHammingProbabilities(parents: List[float], width: int, values: List[f
       elif probability is not None:
         results[i] = logadd(results[i], probability)
   return results
+
+def nplogadd(lhs: npt.NDArray, rhs: npt.NDArray) -> float:
+  c = np.maximum(lhs, rhs)
+  d = np.absolute(lhs - rhs)
+  r = c + np.log1p(np.exp(-d))
+  r[np.isinf(rhs)] = lhs[np.isinf(rhs)]
+  r[np.isinf(lhs)] = rhs[np.isinf(lhs)]
+  return r
+
+def ComputeDynamicProbability(parents_0: npt.NDArray, parents_1: npt.NDArray, values):
+  a = math.exp(values[0]) * parents_0 + math.exp(values[1]) * parents_1
+  b = math.exp(values[2]) * parents_0 + math.exp(values[3]) * parents_1
+  probs_0 = np.multiply.outer(a, a)[np.triu_indices(a.size)]
+  probs_1 = np.multiply.outer(b, b)[np.triu_indices(a.size)]
+  return probs_0, probs_1
+    
+def ComputeDynamicStrings(parent_strings: npt.NDArray):
+  return np.add.outer(parent_strings, parent_strings).flatten()
+
+def ComputeDynamicEquivalenceClassSizes(parent_sizes: npt.NDArray):
+  return np.multiply(np.multiply.outer(parent_sizes, parent_sizes), 2*np.ones((parent_sizes.size, parent_sizes.size)) - np.identity(parent_sizes.size))[np.triu_indices(parent_sizes.size)]
+
+def ComputeRecursiveProbability(memoized: Dict[Tuple[str, str], float], repr, root, width, values: List[float]):
+  if width == 1:
+    if root == '0':
+      if repr == '0':
+        return values[0]
+      else:
+        return values[1]
+    if root == '1':
+      if repr == '1':
+        return values[3]
+      else:
+        return values[2]
+  if (repr, root) in memoized:
+    return memoized[(repr, root)]
+
+  half_width = width // 2
+  left_repr = repr[0:half_width]
+  right_repr = repr[half_width:]
+  if root == '0':
+    prob = logadd(
+      logmul(values[0], logmul(
+        ComputeRecursiveProbability(memoized, left_repr, '0', half_width, values),
+        ComputeRecursiveProbability(memoized, right_repr, '0', half_width, values))), 
+      logmul(values[1], logmul(
+        ComputeRecursiveProbability(memoized, left_repr, '1', half_width, values),
+        ComputeRecursiveProbability(memoized, right_repr, '1', half_width, values))))
+  else:
+    prob = logadd(
+      logmul(values[2], logmul(
+        ComputeRecursiveProbability(memoized, left_repr, '0', half_width, values),
+        ComputeRecursiveProbability(memoized, right_repr, '0', half_width, values))), 
+      logmul(values[3], logmul(
+        ComputeRecursiveProbability(memoized, left_repr, '1', half_width, values),
+        ComputeRecursiveProbability(memoized, right_repr, '1', half_width, values))))
+  memoized[(repr, root)] = prob
+  return prob
 
 def mean(values: List[float]):
   if len(values) <= 1:

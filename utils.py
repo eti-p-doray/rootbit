@@ -4,7 +4,9 @@ def get_bin(value, width) -> str:
   return format(value, 'b').zfill(width)
 
 def GenerateEquivalentClassesImpl(table: Dict[Tuple[int, int], List[str]], sum: int, width: int, symmetry_width: int) -> List[str]:
-  if (width == 1):
+  if width == 0:
+    return []
+  if width == 1:
     return [get_bin(sum, width)]
   if (sum, width) in table:
     return table[(sum, width)]
@@ -39,6 +41,13 @@ def GenerateEquivalentClasses(width: int, symmetry_width: int) -> List[str]:
   for i in range(0, width+1):
     result.extend(GenerateEquivalentClassesImpl(table, i, width, symmetry_width))
   return result
+
+def IterateEquivalentClasses(width: int, symmetry_width: int) -> List[str]:
+  table = {}
+  for i in range(0, width+1):
+    result = GenerateEquivalentClassesImpl(table, i, width, symmetry_width)
+    for c in result:
+      yield c
 
 def GetEquivalentClassSize(value: str, width: int, symmetry_width: int) -> int:
   if (width == 1):
